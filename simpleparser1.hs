@@ -7,10 +7,19 @@ import Control.Monad
 import Control.Applicative hiding ((<|>), many)
 import qualified Data.Map as Map
 import Numeric
-import Control.Monad.Except
+import Control.Monad.Error
 
 main :: IO ()
-main = getArgs >>= putStrLn . show . eval . readExpr . (!! 0)
+main = do
+        args <- getArgs
+        evaled <- return $ liftM show $ readExpr (args !! 0) >>= eval
+        putStrLn $ extractValue $ trapError evaled
+
+readExpr :: String -> ThrowsError LispVal
+readExpr input = case parse parseExpr "lisp" input of
+--    Left err -> LispString $ "No match: " ++ show err
+    Left err -> throwError $ Parser err
+    Right val -> return val
 
 -- LispVal datatype
 
@@ -80,6 +89,11 @@ instance Error LispError where
 
 type ThrowsError = Either LispError
 
+trapError action = catchError action (return . show)
+
+extractValue :: ThrowsError a -> a
+extractValue (Right val) = val
+
 -- Parsers and parser combinators
 
 symbol :: Parser Char
@@ -87,11 +101,6 @@ symbol = oneOf "!$#%&|*+-/:<=>?@^_~"
 
 spaces :: Parser ()
 spaces = skipMany1 space
-
-readExpr :: String -> LispVal
-readExpr input = case parse parseExpr "lisp" input of
-    Left err -> LispString $ "No match: " ++ show err
-    Right val -> val
 
 escapeCharacters = ['\\', '"', 'n', 't', 'r']
 
@@ -174,20 +183,21 @@ parseExpr = try parseChar
 
 -- Eval function
 
-eval :: LispVal -> LispVal
-eval val@(LispString _) = val
-eval val@(Number _) = val
-eval val@(Gaussian _) = val
-eval val@(LispBool _) = val
-eval (List [Atom "quote", val]) = val
-eval (List (Atom func: args)) = apply func $ map eval args
+eval :: LispVal -> ThrowsError LispVal
+eval val@(LispString _) = return val
+eval val@(Number _) = return val
+eval val@(Gaussian _) = return val
+eval val@(LispBool _) = return val
+eval (List [Atom "quote", val]) = return val
+eval (List (Atom func: args)) = mapM eval args >>= apply func
+eval badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
 
-apply :: String -> [LispVal] -> LispVal
-apply func args = maybe (LispBool False) ($ args) $ lookup func primitives
+apply :: String -> [LispVal] -> ThrowsError LispVal
+apply func args = maybe (throwError $ NotFunction "Unrecognized primitive function args" func) ($ args) (lookup func primitives)
 
 -- Inbuilt language functions
 
-primitives :: [(String, [LispVal] -> LispVal)]
+primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
 primitives = [
                 ("+", numericBinop (+)),
                 ("-", numericBinop (-)),
@@ -198,20 +208,27 @@ primitives = [
                 ("rem", numericBinop rem),
                 ("string?", isLispString),
                 ("number?", isNumber),
-                ("class-of", (\x -> Atom $ (showType . head)(x)))
+                ("class-of", getType)
              ]
 
-numericBinop :: (Integer -> Integer -> Integer) -> ([LispVal] -> LispVal)
-numericBinop op params = Number $ foldl1 op $ map unpackNum params
+numericBinop :: (Integer -> Integer -> Integer) -> ([LispVal] -> ThrowsError LispVal)
+numericBinop op singleVal@[_] = throwError $ NumArgs 2 singleVal
+numericBinop op params = mapM unpackNum params >>= return . Number . foldl1 op
 
-unpackNum :: LispVal -> Integer
-unpackNum (Number n) = n
-unpackNum _ = 0
+unpackNum :: LispVal -> ThrowsError Integer
+unpackNum (Number n) = return n
+unpackNum notNum = throwError $ TypeMismatch "number" notNum
 
-isLispString :: [LispVal] -> LispVal
-isLispString (LispString _:_) = LispBool True
-isLispString _ = LispBool False
+isLispString :: [LispVal] -> ThrowsError LispVal
+isLispString ([LispString _]) = return $ LispBool True
+isLispString ([_]) = return $ LispBool False
+isLispString (multiArgs@(_:_)) = throwError $ NumArgs 1 multiArgs
 
-isNumber :: [LispVal] -> LispVal
-isNumber (Number _:_) = LispBool True
-isNumber _ = LispBool False
+isNumber :: [LispVal] -> ThrowsError LispVal
+isNumber ([Number _]) = return $ LispBool True
+isNumber ([_]) = return $ LispBool False
+isNumber (multiArgs@(_:_)) = throwError $ NumArgs 1 multiArgs
+
+getType :: [LispVal] -> ThrowsError LispVal
+getType [x] = return $ Atom $ showType x
+getType (multiArgs@(_:_)) = throwError $ NumArgs 1 multiArgs
