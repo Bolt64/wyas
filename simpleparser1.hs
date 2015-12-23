@@ -208,7 +208,21 @@ primitives = [
                 ("rem", numericBinop rem),
                 ("string?", isLispString),
                 ("number?", isNumber),
-                ("class-of", getType)
+                ("class-of", getType),
+                ("=", numBoolBinop (==)),
+                ("/=", numBoolBinop (/=)),
+                ("<", numBoolBinop (<)),
+                ("<=", numBoolBinop (<=)),
+                (">", numBoolBinop (>)),
+                (">=", numBoolBinop (>=)),
+                ("&&", boolBoolBinop (&&)),
+                ("||", boolBoolBinop (||)),
+                ("string=?", strBoolBinop (==)),
+                ("string/=?", strBoolBinop (/=)),
+                ("string>?", strBoolBinop (>)),
+                ("string<?", strBoolBinop (<)),
+                ("string>=?", strBoolBinop (>=)),
+                ("string<=?", strBoolBinop (<=))
              ]
 
 numericBinop :: (Integer -> Integer -> Integer) -> ([LispVal] -> ThrowsError LispVal)
@@ -232,3 +246,57 @@ isNumber (multiArgs@(_:_)) = throwError $ NumArgs 1 multiArgs
 getType :: [LispVal] -> ThrowsError LispVal
 getType [x] = return $ Atom $ showType x
 getType (multiArgs@(_:_)) = throwError $ NumArgs 1 multiArgs
+
+defNumBoolBinop :: (Integer -> Integer -> Bool) -> [LispVal] -> ThrowsError LispVal
+defNumBoolBinop op [Number a, Number b] = return $ LispBool $ op a b
+
+defBoolBoolBinop :: (Bool -> Bool -> Bool) -> [LispVal] -> ThrowsError LispVal
+defBoolBoolBinop op listArgs = return $ LispBool $ foldl1 op (map extractVal listArgs)
+                                where extractVal (LispBool x) = x
+
+defstrBoolBinop :: (String -> String -> Bool) -> [LispVal] -> ThrowsError LispVal
+defstrBoolBinop op [LispString a, LispString b] = return $ LispBool $ op a b
+
+numBoolBinop :: (Integer -> Integer -> Bool) -> [LispVal] -> ThrowsError LispVal
+numBoolBinop op listArgs = (defNumBoolBinop op) =<< (typeIsNumber) =<< (countArgs 2 listArgs)
+
+boolBoolBinop :: (Bool -> Bool -> Bool) -> [LispVal] -> ThrowsError LispVal
+boolBoolBinop op listArgs = (defBoolBoolBinop op) =<< (typeIsBool) =<< (nonzeroArgs listArgs)
+
+strBoolBinop :: (String -> String -> Bool) -> [LispVal] -> ThrowsError LispVal
+strBoolBinop op listArgs = (defstrBoolBinop op) =<< (typeIsString) =<< (countArgs 2 listArgs)
+
+nonzeroArgs :: [LispVal] -> ThrowsError [LispVal]
+nonzeroArgs list@[] = throwError $ NumArgs 1 list
+nonzeroArgs list = return list
+
+-- Argument sanity checkers
+
+countArgs :: Integer -> [LispVal] -> ThrowsError [LispVal]
+countArgs numArgs listArgs = case (toInteger $ length listArgs) == numArgs of
+                                    True ->   return listArgs
+                                    False -> throwError $ NumArgs numArgs listArgs
+
+typeIsNumber :: [LispVal] -> ThrowsError [LispVal]
+typeIsNumber listArgs = case (dropWhile (\x -> isNumber x) listArgs) of
+                                (found:xs) -> throwError $ TypeMismatch "Number" found
+                                otherwise -> return listArgs
+                             where isNumber x = case x of
+                                                Number _ -> True
+                                                otherwise -> False
+
+typeIsBool :: [LispVal] -> ThrowsError [LispVal]
+typeIsBool listArgs = case (dropWhile (\x -> isBool x) listArgs) of
+                                (found:xs) -> throwError $ TypeMismatch "LispBool" found
+                                otherwise -> return listArgs
+                             where isBool x = case x of
+                                                LispBool _ -> True
+                                                otherwise -> False
+
+typeIsString :: [LispVal] -> ThrowsError [LispVal]
+typeIsString listArgs = case (dropWhile (\x -> isString x) listArgs) of
+                                (found:xs) -> throwError $ TypeMismatch "LispString" found
+                                otherwise -> return listArgs
+                             where isString x = case x of
+                                                LispString _ -> True
+                                                otherwise -> False
