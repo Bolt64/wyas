@@ -16,5 +16,6 @@ cabal.sandbox.config
 *.hp
 eval
 simpleparser1
+scheme_interpreter
 *.swp
 *~

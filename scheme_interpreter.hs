@@ -17,7 +17,6 @@ main = do
 
 readExpr :: String -> ThrowsError LispVal
 readExpr input = case parse parseExpr "lisp" input of
---    Left err -> LispString $ "No match: " ++ show err
     Left err -> throwError $ Parser err
     Right val -> return val
 
@@ -191,7 +190,15 @@ eval val@(Number _) = return val
 eval val@(Gaussian _) = return val
 eval val@(LispBool _) = return val
 eval (List [Atom "quote", val]) = return val
+
+eval (List [Atom "if", pred, conseq, alt]) =
+    do result <- eval pred
+       case result of
+            LispBool False -> eval alt
+            otherwise -> eval conseq
+
 eval (List (Atom func: args)) = mapM eval args >>= apply func
+
 eval badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
 
 apply :: String -> [LispVal] -> ThrowsError LispVal
@@ -224,7 +231,10 @@ primitives = [
                 ("string>?", strBoolBinop (>)),
                 ("string<?", strBoolBinop (<)),
                 ("string>=?", strBoolBinop (>=)),
-                ("string<=?", strBoolBinop (<=))
+                ("string<=?", strBoolBinop (<=)),
+                ("car", car),
+                ("cdr", cdr),
+                ("cons", cons)
              ]
 
 numericBinop :: (Integer -> Integer -> Integer) -> ([LispVal] -> ThrowsError LispVal)
@@ -271,6 +281,30 @@ strBoolBinop op listArgs = (defstrBoolBinop op) =<< (typeIsString) =<< (countArg
 nonzeroArgs :: [LispVal] -> ThrowsError [LispVal]
 nonzeroArgs list@[] = throwError $ NumArgs 1 list
 nonzeroArgs list = return list
+
+defCar :: [LispVal] -> ThrowsError LispVal
+defCar [List (x:xs)] = return x
+defCar [DottedList (x:xs) _] = return x
+defCar [badArg] = throwError $ TypeMismatch "pair" badArg
+
+car :: [LispVal] -> ThrowsError LispVal
+car listArgs = defCar =<< (countArgs 1 listArgs)
+
+defCdr :: [LispVal] -> ThrowsError LispVal
+defCdr [List (x:xs)] = return $ List xs
+defCdr [DottedList [x] y] = return y
+defCdr [DottedList (x:xs) y] = return $ DottedList xs y
+defCdr [badArg] = throwError $ TypeMismatch "pair" badArg
+
+cdr :: [LispVal] -> ThrowsError LispVal
+cdr listArgs = defCdr =<< (countArgs 1 listArgs)
+
+cons :: [LispVal] -> ThrowsError LispVal
+cons [x, List xs] = return $ List (x:xs)
+cons [x, DottedList xs ys] = return $ DottedList (x:xs) ys
+cons [x, y] = return $ DottedList [x] y
+cons badArgs = throwError $ NumArgs 2 badArgs
+
 
 -- Argument sanity checkers
 
