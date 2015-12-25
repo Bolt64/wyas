@@ -138,12 +138,14 @@ parseAtom = do first <- letter <|> symbol
                         otherwise -> Atom atom
 
 parseNumber :: Parser LispVal
-parseNumber = do x <- try decimal <|> try octal <|> try hexadecimal <|> number
+parseNumber = do x <- try negativeNumber <|> try decimal <|> try octal <|> try hexadecimal <|> number
                  return $ (Number . read) x
-              where number = many1 digit
+              where negativeNumber = char '-' *> fmap (show . multNegOne) parseNumber
+                    number = many1 digit
                     decimal = string "#d" *> number
                     octal = string "#o" *> fmap (show . fst . head . readOct) (many1 octDigit)
                     hexadecimal = string "#x" *> fmap (show . fst . head . readHex) (many1 hexDigit)
+                    multNegOne  (Number x) = (-1)*x
 
 parseGaussian :: Parser LispVal
 parseGaussian = do real <- many1 digit
