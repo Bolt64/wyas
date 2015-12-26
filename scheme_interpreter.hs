@@ -211,23 +211,17 @@ eval val@(Number _) = return val
 eval val@(Gaussian _) = return val
 eval val@(LispBool _) = return val
 eval (List [Atom "quote", val]) = return val
-
-eval (List [Atom "if", pred, conseq, alt]) =
-    do result <- eval pred
-       case result of
-            LispBool False -> eval alt
-            otherwise -> eval conseq
-
 eval (List (Atom func: args)) = mapM eval args >>= apply func
-
 eval badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
 
-apply :: String -> [LispVal] -> ThrowsError LispVal
+type LispFunction = [LispVal] -> ThrowsError LispVal
+
+apply :: String -> LispFunction
 apply func args = maybe (throwError $ NotFunction "Unrecognized primitive function args" func) ($ args) (lookup func primitives)
 
 -- Inbuilt language functions
 
-primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
+primitives :: [(String, LispFunction)]
 primitives = [
                 ("+", numericBinop (+)),
                 ("-", numericBinop (-)),
@@ -257,10 +251,12 @@ primitives = [
                 ("cdr", cdr),
                 ("cons", cons),
                 ("eqv?", eqv),
-                ("eq?", eqv)
+                ("eq?", eqv),
+                ("if", lispIf)
+                {-("cond", lispCond)-}
              ]
 
-numericBinop :: (Integer -> Integer -> Integer) -> ([LispVal] -> ThrowsError LispVal)
+numericBinop :: (Integer -> Integer -> Integer) -> (LispFunction)
 numericBinop op singleVal@[_] = throwError $ NumArgs 2 singleVal
 numericBinop op params = mapM unpackNum params >>= return . Number . foldl1 op
 
@@ -268,69 +264,99 @@ unpackNum :: LispVal -> ThrowsError Integer
 unpackNum (Number n) = return n
 unpackNum notNum = throwError $ TypeMismatch "number" notNum
 
-isLispString :: [LispVal] -> ThrowsError LispVal
+isLispString :: LispFunction
 isLispString ([LispString _]) = return $ LispBool True
 isLispString ([_]) = return $ LispBool False
 isLispString (multiArgs@(_:_)) = throwError $ NumArgs 1 multiArgs
 
-isNumber :: [LispVal] -> ThrowsError LispVal
+isNumber :: LispFunction
 isNumber ([Number _]) = return $ LispBool True
 isNumber ([_]) = return $ LispBool False
 isNumber (multiArgs@(_:_)) = throwError $ NumArgs 1 multiArgs
 
-getType :: [LispVal] -> ThrowsError LispVal
+getType :: LispFunction
 getType [x] = return $ Atom $ showType x
 getType (multiArgs@(_:_)) = throwError $ NumArgs 1 multiArgs
 
-defNumBoolBinop :: (Integer -> Integer -> Bool) -> [LispVal] -> ThrowsError LispVal
+defNumBoolBinop :: (Integer -> Integer -> Bool) -> LispFunction
 defNumBoolBinop op [Number a, Number b] = return $ LispBool $ op a b
 
-defBoolBoolBinop :: (Bool -> Bool -> Bool) -> [LispVal] -> ThrowsError LispVal
+defBoolBoolBinop :: (Bool -> Bool -> Bool) -> LispFunction
 defBoolBoolBinop op listArgs = return $ LispBool $ foldl1 op (map extractVal listArgs)
                                 where extractVal (LispBool x) = x
 
-defstrBoolBinop :: (String -> String -> Bool) -> [LispVal] -> ThrowsError LispVal
+defstrBoolBinop :: (String -> String -> Bool) -> LispFunction
 defstrBoolBinop op [LispString a, LispString b] = return $ LispBool $ op a b
 
-numBoolBinop :: (Integer -> Integer -> Bool) -> [LispVal] -> ThrowsError LispVal
+numBoolBinop :: (Integer -> Integer -> Bool) -> LispFunction
 numBoolBinop op listArgs = (defNumBoolBinop op) =<< (typeIsNumber) =<< (countArgs 2 listArgs)
 
-boolBoolBinop :: (Bool -> Bool -> Bool) -> [LispVal] -> ThrowsError LispVal
+boolBoolBinop :: (Bool -> Bool -> Bool) -> LispFunction
 boolBoolBinop op listArgs = (defBoolBoolBinop op) =<< (typeIsBool) =<< (nonzeroArgs listArgs)
 
-strBoolBinop :: (String -> String -> Bool) -> [LispVal] -> ThrowsError LispVal
+strBoolBinop :: (String -> String -> Bool) -> LispFunction
 strBoolBinop op listArgs = (defstrBoolBinop op) =<< (typeIsString) =<< (countArgs 2 listArgs)
 
 nonzeroArgs :: [LispVal] -> ThrowsError [LispVal]
 nonzeroArgs list@[] = throwError $ NumArgs 1 list
 nonzeroArgs list = return list
 
-defCar :: [LispVal] -> ThrowsError LispVal
+defCar :: LispFunction
 defCar [List (x:xs)] = return x
 defCar [DottedList (x:xs) _] = return x
 defCar [badArg] = throwError $ TypeMismatch "pair" badArg
 
-car :: [LispVal] -> ThrowsError LispVal
+car :: LispFunction
 car listArgs = defCar =<< (countArgs 1 listArgs)
 
-defCdr :: [LispVal] -> ThrowsError LispVal
+defCdr :: LispFunction
 defCdr [List (x:xs)] = return $ List xs
 defCdr [DottedList [x] y] = return y
 defCdr [DottedList (x:xs) y] = return $ DottedList xs y
 defCdr [badArg] = throwError $ TypeMismatch "pair" badArg
 
-cdr :: [LispVal] -> ThrowsError LispVal
+cdr :: LispFunction
 cdr listArgs = defCdr =<< (countArgs 1 listArgs)
 
-cons :: [LispVal] -> ThrowsError LispVal
+cons :: LispFunction
 cons [x, List xs] = return $ List (x:xs)
 cons [x, DottedList xs ys] = return $ DottedList (x:xs) ys
 cons [x, y] = return $ DottedList [x] y
 cons badArgs = throwError $ NumArgs 2 badArgs
 
-eqv :: [LispVal] -> ThrowsError LispVal
+eqv :: LispFunction
 eqv [a,b] = return $ LispBool $ a==b
 eqv badArgs = throwError $ NumArgs 2 badArgs
+
+defLispIf :: LispFunction
+defLispIf [pred, conseq, alt] = do result <- eval pred
+                                   case result of
+                                    LispBool True -> eval conseq
+                                    LispBool False -> eval alt
+                                    badArg -> throwError $ TypeMismatch "LispBool" badArg
+
+lispIf :: LispFunction
+lispIf listArgs = defLispIf =<< (countArgs 3 listArgs)
+
+defEvalClause :: LispFunction
+defEvalClause [(List [Atom "else", expression])] = defEvalClause [(List [LispBool True, expression])]
+defEvalClause [(List [test, expression])] = do result <- eval test
+                                               case result of
+                                                LispBool True -> do evaled <- eval expression
+                                                                    return $ List [LispBool True, evaled]
+                                                LispBool False -> return $ List [LispBool False]
+                                                badEval -> throwError $ TypeMismatch "LispBool" badEval
+defEvalClause [badArg] = throwError $ TypeMismatch "clause" badArg
+
+evalClause :: LispFunction
+evalClause listArgs = defEvalClause =<< (countArgs 1 listArgs)
+
+cond :: LispFunction
+cond [] = throwError $ BadSpecialForm "No clause evaluated to true" (List [])
+cond (x:xs) = do result <- evalClause [x]
+                 case result of
+                    List [LispBool True, output] -> return output
+                    List [LispBool False] -> cond xs
 
 -- Argument sanity checkers
 
