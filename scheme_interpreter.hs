@@ -31,6 +31,8 @@ data LispVal = Atom String
              | LispChar Char
              | LispBool Bool
 
+-- Show typeclass instantiation
+
 instance Show LispVal where
     show lispval = case lispval of
                     Atom s -> s
@@ -61,6 +63,25 @@ wrapWithBrackets s = "(" ++ s ++ ")"
 
 showCleanList :: [LispVal] -> String
 showCleanList = unwords . map show
+
+-- Show typeclass instantiation
+
+instance Eq LispVal where
+    (==) = areEqual
+
+areEqual :: LispVal -> LispVal -> Bool
+areEqual (Atom a) (Atom b) = a==b
+areEqual (Number a) (Number b) = a==b
+areEqual (Gaussian (a,ai)) (Gaussian (b,bi)) = a==b && ai==bi
+areEqual (LispString a) (LispString b) = a==b
+areEqual (LispChar a) (LispChar b) = a==b
+areEqual (LispBool a) (LispBool b) = a==b
+areEqual (List []) (List []) = True
+areEqual (List (x:xs)) (List []) = False
+areEqual (List []) (List (x:xs)) = False
+areEqual (List (x:xs)) (List (y:ys)) = x==y && (areEqual (List xs) (List ys))
+areEqual (DottedList xs x) (DottedList ys y) = (areEqual x y) && (areEqual (List xs) (List ys))
+areEqual _ _ = False
 
 -- LispError datatype
 
@@ -234,7 +255,9 @@ primitives = [
                 ("string<=?", strBoolBinop (<=)),
                 ("car", car),
                 ("cdr", cdr),
-                ("cons", cons)
+                ("cons", cons),
+                ("eqv?", eqv),
+                ("eq?", eqv)
              ]
 
 numericBinop :: (Integer -> Integer -> Integer) -> ([LispVal] -> ThrowsError LispVal)
@@ -305,6 +328,9 @@ cons [x, DottedList xs ys] = return $ DottedList (x:xs) ys
 cons [x, y] = return $ DottedList [x] y
 cons badArgs = throwError $ NumArgs 2 badArgs
 
+eqv :: [LispVal] -> ThrowsError LispVal
+eqv [a,b] = return $ LispBool $ a==b
+eqv badArgs = throwError $ NumArgs 2 badArgs
 
 -- Argument sanity checkers
 
