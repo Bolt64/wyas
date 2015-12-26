@@ -261,8 +261,8 @@ evalCaseClause :: LispVal -> LispVal -> ThrowsError LispVal
 evalCaseClause _ (List [Atom "else", expression]) = do result <- eval expression
                                                        return $ List [LispBool True, result]
 evalCaseClause key (List [datum, expression]) = do evaled <- eval key
-                                                   do ifContains <- listContains [evaled, datum]
-                                                      case ifContains of
+                                                   ifContains <- listContains [evaled, datum]
+                                                   case ifContains of
                                                         LispBool True -> do result <- eval expression
                                                                             return $ List [LispBool True, result]
                                                         LispBool False -> return $ List [LispBool False]
