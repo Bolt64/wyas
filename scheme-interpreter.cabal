@@ -28,15 +28,15 @@ cabal-version:       >=1.10
     --base >= 4, mtl >= 2, parsec >= 3
   --default-language:    Haskell2010
 
-executable scheme-interpreter-executable
+executable scheme-interpreter
   hs-source-dirs:      src
   main-is:             Main.hs
   other-modules:       DataTypes
                        SourceParser
                        Evaluator
   -- other-extensions:    
-  build-depends:       base >=4.8 && <4.9,
+  build-depends:       base >=4.7 && <4.9,
                        parsec >=3.1 && <3.2,
-                       mtl >=2.2 && <2.3
+                       mtl >=2.1 && <2.3
                        --scheme-interpreter
   default-language:    Haskell2010
