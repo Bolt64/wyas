@@ -12,4 +12,5 @@ Clone the git repo and then create a cabal sandbox using
 If you want to enable testing, do
 
 `cabal install --enable-tests --only-dependencies`
+
 `cabal configure --enable-tests`
