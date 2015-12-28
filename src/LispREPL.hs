@@ -1,7 +1,8 @@
 module LispREPL
     (
     evalAndPrint,
-    runRepl
+    runRepl,
+    runOne
     ) where
 
 import System.IO

@@ -6,8 +6,9 @@ module PrimitiveFunctions
     ) where
 
 import DataTypes
+import StateManager
 
-type LispFunction = [LispVal] -> ThrowsError LispVal
+type LispFunction = Env -> [LispVal] -> IOThrowsError LispVal
 
 primitives :: [(String, LispFunction)]
 primitives = [
@@ -43,103 +44,103 @@ primitives = [
              ]
 
 numericBinop :: (Integer -> Integer -> Integer) -> (LispFunction)
-numericBinop op singleVal@[_] = throwError $ NumArgs 2 singleVal
-numericBinop op params = mapM unpackNum params >>= return . Number . foldl1 op
+numericBinop op _ singleVal@[_] = throwError $ NumArgs 2 singleVal
+numericBinop op _ params = mapM unpackNum params >>= return . Number . foldl1 op
 
-unpackNum :: LispVal -> ThrowsError Integer
+unpackNum :: LispVal -> IOThrowsError Integer
 unpackNum (Number n) = return n
 unpackNum notNum = throwError $ TypeMismatch "number" notNum
 
 isLispString :: LispFunction
-isLispString ([LispString _]) = return $ LispBool True
-isLispString ([_]) = return $ LispBool False
-isLispString (multiArgs@(_:_)) = throwError $ NumArgs 1 multiArgs
+isLispString _ ([LispString _]) = return $ LispBool True
+isLispString _ ([_]) = return $ LispBool False
+isLispString _ (multiArgs@(_:_)) = throwError $ NumArgs 1 multiArgs
 
 isNumber :: LispFunction
-isNumber ([Number _]) = return $ LispBool True
-isNumber ([_]) = return $ LispBool False
-isNumber (multiArgs@(_:_)) = throwError $ NumArgs 1 multiArgs
+isNumber _ ([Number _]) = return $ LispBool True
+isNumber _ ([_]) = return $ LispBool False
+isNumber _ (multiArgs@(_:_)) = throwError $ NumArgs 1 multiArgs
 
 getType :: LispFunction
-getType [x] = return $ Atom $ showType x
-getType (multiArgs@(_:_)) = throwError $ NumArgs 1 multiArgs
+getType _ [x] = return $ Atom $ showType x
+getType _ (multiArgs@(_:_)) = throwError $ NumArgs 1 multiArgs
 
 defNumBoolBinop :: (Integer -> Integer -> Bool) -> LispFunction
-defNumBoolBinop op [Number a, Number b] = return $ LispBool $ op a b
+defNumBoolBinop op _ [Number a, Number b] = return $ LispBool $ op a b
 
 defBoolBoolBinop :: (Bool -> Bool -> Bool) -> LispFunction
-defBoolBoolBinop op listArgs = return $ LispBool $ foldl1 op (map extractVal listArgs)
+defBoolBoolBinop op _ listArgs = return $ LispBool $ foldl1 op (map extractVal listArgs)
                                 where extractVal (LispBool x) = x
 
 defstrBoolBinop :: (String -> String -> Bool) -> LispFunction
-defstrBoolBinop op [LispString a, LispString b] = return $ LispBool $ op a b
+defstrBoolBinop op _ [LispString a, LispString b] = return $ LispBool $ op a b
 
 numBoolBinop :: (Integer -> Integer -> Bool) -> LispFunction
-numBoolBinop op listArgs = (defNumBoolBinop op) =<< (typeIsNumber) =<< (countArgs 2 listArgs)
+numBoolBinop op env listArgs = (defNumBoolBinop op env) =<< (typeIsNumber) =<< (countArgs 2 listArgs)
 
 boolBoolBinop :: (Bool -> Bool -> Bool) -> LispFunction
-boolBoolBinop op listArgs = (defBoolBoolBinop op) =<< (typeIsBool) =<< (nonzeroArgs listArgs)
+boolBoolBinop op env listArgs = (defBoolBoolBinop op env) =<< (typeIsBool) =<< (nonzeroArgs listArgs)
 
 strBoolBinop :: (String -> String -> Bool) -> LispFunction
-strBoolBinop op listArgs = (defstrBoolBinop op) =<< (typeIsString) =<< (countArgs 2 listArgs)
+strBoolBinop op env listArgs = (defstrBoolBinop op env) =<< (typeIsString) =<< (countArgs 2 listArgs)
 
-nonzeroArgs :: [LispVal] -> ThrowsError [LispVal]
+nonzeroArgs :: [LispVal] -> IOThrowsError [LispVal]
 nonzeroArgs list@[] = throwError $ NumArgs 1 list
 nonzeroArgs list = return list
 
 defCar :: LispFunction
-defCar [List (x:xs)] = return x
-defCar [DottedList (x:xs) _] = return x
-defCar [badArg] = throwError $ TypeMismatch "pair" badArg
+defCar _ [List (x:xs)] = return x
+defCar _ [DottedList (x:xs) _] = return x
+defCar _ [badArg] = throwError $ TypeMismatch "pair" badArg
 
 car :: LispFunction
-car listArgs = defCar =<< (countArgs 1 listArgs)
+car env listArgs = defCar env =<< (countArgs 1 listArgs)
 
 defCdr :: LispFunction
-defCdr [List (x:xs)] = return $ List xs
-defCdr [DottedList [x] y] = return y
-defCdr [DottedList (x:xs) y] = return $ DottedList xs y
-defCdr [badArg] = throwError $ TypeMismatch "pair" badArg
+defCdr _ [List (x:xs)] = return $ List xs
+defCdr _ [DottedList [x] y] = return y
+defCdr _ [DottedList (x:xs) y] = return $ DottedList xs y
+defCdr _ [badArg] = throwError $ TypeMismatch "pair" badArg
 
 cdr :: LispFunction
-cdr listArgs = defCdr =<< (countArgs 1 listArgs)
+cdr env listArgs = defCdr env =<< (countArgs 1 listArgs)
 
 cons :: LispFunction
-cons [x, List xs] = return $ List (x:xs)
-cons [x, DottedList xs ys] = return $ DottedList (x:xs) ys
-cons [x, y] = return $ DottedList [x] y
-cons badArgs = throwError $ NumArgs 2 badArgs
+cons _ [x, List xs] = return $ List (x:xs)
+cons _ [x, DottedList xs ys] = return $ DottedList (x:xs) ys
+cons _ [x, y] = return $ DottedList [x] y
+cons _ badArgs = throwError $ NumArgs 2 badArgs
 
 eqv :: LispFunction
-eqv [a,b] = return $ LispBool $ a==b
-eqv badArgs = throwError $ NumArgs 2 badArgs
+eqv _ [a,b] = return $ LispBool $ a==b
+eqv _ badArgs = throwError $ NumArgs 2 badArgs
 
 defContains :: LispFunction
-defContains [x, List []] = return $ LispBool False
-defContains [x, List (y:ys)]
+defContains _ [x, List []] = return $ LispBool False
+defContains env [x, List (y:ys)]
                             | x==y = return $ LispBool True
-                            | otherwise = defContains [x, List ys]
-defContains badArgs = throwError $ TypeMismatch "LispVal and List" (List badArgs)
+                            | otherwise = defContains env [x, List ys]
+defContains _ badArgs = throwError $ TypeMismatch "LispVal and List" (List badArgs)
 
 listContains :: LispFunction
-listContains listArgs = defContains =<< (countArgs 2 listArgs)
+listContains env listArgs = defContains env =<< (countArgs 2 listArgs)
 
 -- Argument sanity checkers
 
-countArgs :: Integer -> [LispVal] -> ThrowsError [LispVal]
+countArgs :: Integer -> [LispVal] -> IOThrowsError [LispVal]
 countArgs numArgs listArgs = case (toInteger $ length listArgs) == numArgs of
                                     True ->   return listArgs
                                     False -> throwError $ NumArgs numArgs listArgs
 
-typeIsNumber :: [LispVal] -> ThrowsError [LispVal]
-typeIsNumber listArgs = case (dropWhile (\x -> isNumber x) listArgs) of
+typeIsNumber :: [LispVal] -> IOThrowsError [LispVal]
+typeIsNumber listArgs = case (dropWhile (\x -> isLispNumber x) listArgs) of
                                 (found:xs) -> throwError $ TypeMismatch "Number" found
                                 otherwise -> return listArgs
-                             where isNumber x = case x of
+                             where isLispNumber x = case x of
                                                 Number _ -> True
                                                 otherwise -> False
 
-typeIsBool :: [LispVal] -> ThrowsError [LispVal]
+typeIsBool :: [LispVal] -> IOThrowsError [LispVal]
 typeIsBool listArgs = case (dropWhile (\x -> isBool x) listArgs) of
                                 (found:xs) -> throwError $ TypeMismatch "LispBool" found
                                 otherwise -> return listArgs
@@ -147,7 +148,7 @@ typeIsBool listArgs = case (dropWhile (\x -> isBool x) listArgs) of
                                                 LispBool _ -> True
                                                 otherwise -> False
 
-typeIsString :: [LispVal] -> ThrowsError [LispVal]
+typeIsString :: [LispVal] -> IOThrowsError [LispVal]
 typeIsString listArgs = case (dropWhile (\x -> isString x) listArgs) of
                                 (found:xs) -> throwError $ TypeMismatch "LispString" found
                                 otherwise -> return listArgs
