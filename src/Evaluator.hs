@@ -5,58 +5,64 @@ module Evaluator
 
 import DataTypes
 import PrimitiveFunctions
+import StateManager
 
 -- Eval function
 
-eval :: LispVal -> ThrowsError LispVal
-eval val@(LispString _) = return val
-eval val@(Number _) = return val
-eval val@(Gaussian _) = return val
-eval val@(LispBool _) = return val
-eval (List [Atom "quote", val]) = return val
-eval (List (Atom "if" : listArgs)) = lispIf listArgs
-eval (List (Atom "cond" : listArgs)) = lispCond listArgs
-eval (List (Atom "case" : (key : clauses))) = lispCase key clauses
-eval (List (Atom func: args)) = mapM eval args >>= apply func
-eval badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
+eval :: Env -> LispVal -> IOThrowsError LispVal
+eval env val@(LispString _) = return val
+eval env val@(Number _) = return val
+eval env val@(Gaussian _) = return val
+eval env val@(LispBool _) = return val
+eval env (Atom id) = getVar env id
+eval env (List [Atom "quote", val]) = return val
+eval env (List (Atom "if" : listArgs)) = lispIf env listArgs
+eval env (List [Atom "set!", Atom var, form]) = 
+    eval env form >>= setVar env var
+eval env (List [Atom "define", Atom var, form]) =
+    eval env form >>= defineVar env var
+eval env (List (Atom "cond" : listArgs)) = lispCond env listArgs
+eval env (List (Atom "case" : (key : clauses))) = lispCase env key clauses
+eval env (List (Atom func: args)) = mapM (eval env) args >>= liftThrows . apply func
+eval env badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
 
 -- New type alias for convenience
 
-type LispFunction = [LispVal] -> ThrowsError LispVal
+type LispFunction = Env -> [LispVal] -> IOThrowsError LispVal
 
 -- Code to implement if
 
 defIf :: LispFunction
-defIf [pred, conseq, alt] = do result <- eval pred
-                               case result of
-                                    LispBool True -> eval conseq
-                                    LispBool False -> eval alt
-                                    badArg -> throwError $ TypeMismatch "LispBool" badArg
+defIf env [pred, conseq, alt] = do result <- eval env pred
+                                   case result of
+                                        LispBool True -> eval env conseq
+                                        LispBool False -> eval env alt
+                                        badArg -> throwError $ TypeMismatch "LispBool" badArg
 
 lispIf :: LispFunction
-lispIf listArgs = defIf =<< (countArgs 3 listArgs)
+lispIf env listArgs = defIf =<< (countArgs 3 listArgs)
 
 -- A whole lot of code to implement cond
 
 defEvalClause :: LispFunction
-defEvalClause [(List [Atom "else", expression])] = defEvalClause [(List [LispBool True, expression])]
-defEvalClause [(List [test, expression])] = do result <- eval test
-                                               case result of
-                                                LispBool True -> do evaled <- eval expression
-                                                                    return $ List [LispBool True, evaled]
-                                                LispBool False -> return $ List [LispBool False]
-                                                badEval -> throwError $ TypeMismatch "LispBool" badEval
-defEvalClause [badArg] = throwError $ TypeMismatch "clause" badArg
+defEvalClause env [(List [Atom "else", expression])] = defEvalClause [(List [LispBool True, expression])]
+defEvalClause env [(List [test, expression])] = do result <- eval env test
+                                                   case result of
+                                                    LispBool True -> do evaled <- eval env expression
+                                                                     return $ List [LispBool True, evaled]
+                                                    LispBool False -> return $ List [LispBool False]
+                                                    badEval -> throwError $ TypeMismatch "LispBool" badEval
+defEvalClause env [badArg] = throwError $ TypeMismatch "clause" badArg
 
 evalClause :: LispFunction
-evalClause listArgs = defEvalClause =<< (countArgs 1 listArgs)
+evalClause env listArgs = defEvalClause =<< (countArgs 1 listArgs)
 
 lispCond :: LispFunction
-lispCond [] = throwError $ BadSpecialForm "No clause evaluated to true" (List [])
-lispCond (x:xs) = do result <- evalClause [x]
-                     case result of
-                        List [LispBool True, output] -> return output
-                        List [LispBool False] -> lispCond xs
+lispCond env [] = throwError $ BadSpecialForm "No clause evaluated to true" (List [])
+lispCond env (x:xs) = do result <- evalClause env [x]
+                         case result of
+                            List [LispBool True, output] -> return output
+                            List [LispBool False] -> lispCond env xs
 
 -- Code to implement case
 

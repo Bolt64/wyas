@@ -1,8 +1,9 @@
 module StateManager where
 
 import Data.IORef
-import DataTypes
 import Control.Monad.Error
+
+import DataTypes
 
 type Env = IORef [(String, IORef LispVal)]
 
