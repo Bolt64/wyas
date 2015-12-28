@@ -1,4 +1,14 @@
-module StateManager where
+module StateManager 
+    (
+    Env,
+    IOThrowsError,
+    setVar,
+    getVar,
+    defineVar,
+    runIOThrows,
+    liftThrows,
+    nullEnv
+    ) where
 
 import Data.IORef
 import Control.Monad.Error
