@@ -8,7 +8,7 @@ import Text.ParserCombinators.Parsec hiding (spaces)
 import DataTypes
 import Numeric (readHex, readOct)
 import Control.Monad
-import Control.Applicative hiding ((<|>), many)
+{-import Control.Applicative hiding ((<|>), many)-}
 
 symbol :: Parser Char
 symbol = oneOf "!$#%&|*+-/:<=>?@^_~"
