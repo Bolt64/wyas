@@ -11,6 +11,10 @@ module DataTypes
 
 import Control.Monad.Error
 import Text.ParserCombinators.Parsec (Parser, ParseError)
+import Data.IORef
+
+-- Environment for closures
+type Env = IORef [(String, IORef LispVal)]
 
 -- LispVal datatype
 
@@ -22,6 +26,8 @@ data LispVal = Atom String
              | LispString String
              | LispChar Char
              | LispBool Bool
+             | PrimitiveFunc ([LispVal] -> ThrowsError LispVal)
+             | Func {params :: [String], vararg :: (Maybe String), body :: [LispVal], closure :: Env}
 
 -- Show typeclass instantiation
 
@@ -37,6 +43,12 @@ instance Show LispVal where
                                     False -> "#f"
                     List l -> ((wrapWithBrackets . showCleanList) l)
                     DottedList l e -> ((wrapWithBrackets . showCleanList) l) ++ " " ++ (show e)
+                    PrimitiveFunc _ -> "<primitive>"
+                    Func {params = args, vararg = varargs, body = body, closure = env} ->
+                        "(lambda (" ++ unwords (map show args) ++
+                            (case varargs of
+                                Nothing -> ""
+                                Just arg -> " . " ++ arg) ++ ") ...)"
 
 showType :: LispVal -> String
 showType (Atom _) = "Atom"
@@ -47,6 +59,8 @@ showType (Gaussian _) = "Gaussian"
 showType (LispString _) = "LispString"
 showType (LispChar _) = "LispChar"
 showType (LispBool _) = "LispBool"
+showType (PrimitiveFunc _) = "PrimitiveFunc"
+showType (Func _) = "Func"
 
 -- Some helper functions
 

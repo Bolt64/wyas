@@ -21,7 +21,7 @@ eval env (List [Atom "set!", Atom var, form]) = lispSetVar env var form
 eval env (List [Atom "define", Atom var, form]) = lispDefineVar env var form
 eval env (List (Atom "cond" : listArgs)) = lispCond env listArgs
 eval env (List (Atom "case" : (key : clauses))) = lispCase env key clauses
-eval env (List (Atom func: args)) = mapM (eval env) args >>= apply func env
+eval env (List (Atom func : args)) = mapM (eval env) args >>= apply func env
 eval env badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
 
 -- evaluate a sequence of lispVals in order
@@ -96,8 +96,11 @@ lispDefineVar env var form = eval env form >>= defineVar env var
 
 -- function application
 
-apply :: String -> LispFunction
-apply func env args = maybe (throwError $ NotFunction "Unrecognized primitive function args" func) (applyTwo env args) (lookup func primitives)
+{-apply :: String -> LispFunction-}
+{-apply func env args = maybe (throwError $ NotFunction "Unrecognized primitive function args" func) (applyTwo env args) (lookup func primitives)-}
+
+apply :: LispVal -> LispFunction
+apply 
 
 -- Helper function
 applyTwo :: a -> b -> (a -> b -> c) -> c
